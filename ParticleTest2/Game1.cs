@@ -56,7 +56,7 @@ namespace ParticleTest2
         RenderTarget2D temporaryRT; // temporary render target, needed when updating the other render targets
         DepthStencilBuffer simulationDepthBuffer; // depth buffer of the same size as the render targets, used when updating the particle system
 
-        VertexBuffer particlesVB;  // vertex buffer that will hold the particle system's vertices.
+        VertexBuffer particlesVB;    // vertex buffer that will hold the particle system's vertices. Necessary for drawing PointList primitive.
         Effect renderParticleEffect; // effect file used to render the particles
         Effect physicsEffect;        // effect file used to update the physics (position and velocities)
         SpriteBatch spriteBatch;     // sprite batch used for 2D drawing
@@ -64,8 +64,10 @@ namespace ParticleTest2
         int particleCount = 512;     // dimension for render targets. We will have particleCount * particleCount particles.
         bool isSuperPullOn = false;
         int pullStrength = 100;
+        int coreGravityStrength = 450000;
         bool isDownGravityOn = false; //toggle down gravity
         bool isCenterGravityOn = false; //toggle center gravity
+        bool doRotateParticlesSpiral = true;      //false= rotating particles spiral in, true=rotating particles orbit.
 
         IInputHandler inputHandler;
 
@@ -74,7 +76,7 @@ namespace ParticleTest2
         int worldHeight;
         int worldWidth;
 
-        public Game1()
+        public Game1(int particleCount, int pullStrength, int coreGravityStrength)
         {
             graphics = new GraphicsDeviceManager(this);
             Content.RootDirectory = "Content";
@@ -87,6 +89,10 @@ namespace ParticleTest2
             InputHandler tempHandler = new InputHandler(this);
             inputHandler = tempHandler;
             Components.Add(tempHandler);
+
+            this.particleCount = particleCount > 0 ? particleCount : this.particleCount;
+            this.pullStrength = pullStrength > 0 ? pullStrength : this.pullStrength;
+            this.coreGravityStrength = coreGravityStrength > 0 ? coreGravityStrength : this.coreGravityStrength;
         }
 
 
@@ -161,16 +167,21 @@ namespace ParticleTest2
         protected override void LoadContent()
         {
             spriteBatch = new SpriteBatch(graphics.GraphicsDevice);
-            
-            particleTexture = Content.Load<Texture2D>("Textures\\Flare");
 
-            //load shaders
+            particleTexture = Content.Load<Texture2D>("Textures\\particle2");
+
+            //physics shader
             physicsEffect = Content.Load<Effect>("Shaders\\ParticlePhysics");
+
+            //values for mapping mouse input to the particle space
             worldHalfHeight = physicsEffect.Parameters["screenBorderFromCenterY"].GetValueInt32();
             worldHalfWidth = physicsEffect.Parameters["screenBorderFromCenterX"].GetValueInt32();
             worldHeight = worldHalfHeight * 2;
             worldWidth = worldHalfWidth * 2;
+            //set core gravity strength in shader
+            physicsEffect.Parameters["coreGravityStrength"].SetValue(coreGravityStrength);
 
+            //shader to render the particles
             renderParticleEffect = Content.Load<Effect>("Shaders\\Particle");
 
             //initialize renderTargets
@@ -182,7 +193,6 @@ namespace ParticleTest2
             isPhysicsReset = false;
 
             //generate initial particles for vertexbuffer
-            //the data isn't really used because it gets overwritten by the Particle.fx shader
             VertexPositionColor[] vertices = new VertexPositionColor[particleCount * particleCount];
             Random rand = new Random();
             for (int i = 0; i < particleCount; i++)
@@ -190,10 +200,16 @@ namespace ParticleTest2
                 for (int j = 0; j < particleCount; j++)
                 {
                     VertexPositionColor vert = new VertexPositionColor();
+                    byte red = (byte)(150);
+                    byte green = (byte)(150);
+                    byte blue = (byte)(200 + rand.Next(50));
 
-                    vert.Color = new Color(150, 150, (byte)(200 + rand.Next(50)));
+                    vert.Color = new Color( red, green, blue);
+                    //set each x and y of the particle's vertex to the coordinate of its corresponding pixel on
+                    //the position/velocity render targets (which are really like textures)
+                    //the shader uses this x and y to fetch the values in the corresponding pixel.
                     vert.Position = new Vector3();
-                    vert.Position.X = (float)i / (float)particleCount;
+                    vert.Position.X = (float)i / (float)particleCount;  
                     vert.Position.Y = (float)j / (float)particleCount;
                     vertices[i * particleCount + j] = vert;
                 }
@@ -201,7 +217,7 @@ namespace ParticleTest2
             particlesVB = new VertexBuffer(graphics.GraphicsDevice, typeof(VertexPositionColor), particleCount * particleCount, BufferUsage.Points);
             particlesVB.SetData<VertexPositionColor>(vertices);
 
-            //generate a random texture for initial particle locations and colors
+            //generate a random texture for initial particle locations
             int textureSize = particleCount;
             randomTexture = new Texture2D(graphics.GraphicsDevice, textureSize, textureSize, 1, TextureUsage.None, SurfaceFormat.Vector4);
             Vector4[] pointsarray = new Vector4[textureSize * textureSize];
@@ -289,7 +305,8 @@ namespace ParticleTest2
             physicsEffect.CurrentTechnique.Passes[0].End();
             physicsEffect.End();
             
-            //second operation to copy back to rendertarget
+            //second operation to copy back to the final rendertarget, 
+            //because we cannot read from and write to the same render target in one pass.
             //set render target
             graphics.GraphicsDevice.SetRenderTarget(0, resultTarget);
 
@@ -383,8 +400,13 @@ namespace ParticleTest2
                 isDownGravityOn = false;
                 isCenterGravityOn = true;
             }
+            if (currentState.IsKeyDown(Keys.D4) && !previousState.IsKeyDown(Keys.D4)) //4 - toggle spiral/orbital initial velocity
+            {
+                doRotateParticlesSpiral = !doRotateParticlesSpiral;
+            }
             physicsEffect.Parameters["isDownGravityOn"].SetValue(isDownGravityOn);
             physicsEffect.Parameters["isCoreGravityOn"].SetValue(isCenterGravityOn);
+            physicsEffect.Parameters["spiralIn"].SetValue(doRotateParticlesSpiral);
 
             //enter = reset 
             if (currentState.IsKeyDown(Keys.Enter) && !previousState.IsKeyDown(Keys.Enter))
@@ -415,9 +437,7 @@ namespace ParticleTest2
             graphics.GraphicsDevice.Clear(Color.Black); 
 
             //set Particle.fx variables
-            renderParticleEffect.Parameters["world"].SetValue(Matrix.Identity);
-            renderParticleEffect.Parameters["view"].SetValue(camera.View);
-            renderParticleEffect.Parameters["proj"].SetValue(camera.Projection);
+            renderParticleEffect.Parameters["WorldViewProj"].SetValue(Matrix.Identity * camera.View * camera.Projection);
             renderParticleEffect.Parameters["textureMap"].SetValue(particleTexture);
             renderParticleEffect.Parameters["positionMap"].SetValue(positionRT.GetTexture());
             renderParticleEffect.CommitChanges();

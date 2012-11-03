@@ -54,19 +54,24 @@ sampler displacementSampler = sampler_state
     AddressV  = Clamp;
 };
 
-float maxLife = 20000.0f;
+float maxLife = 20000.0f;			//frames a particle lasts
 
 int screenBorderFromCenterY = 800;
 int screenBorderFromCenterX = 1430;
 
-float degredation = 0.1;
+float degredation = 0.2;		
 bool isDownGravityOn = false;
 bool isCoreGravityOn = false;
+bool spiralIn = true;
+int coreGravityStrength = 450000;
+float2x2 nintyDegreeRot = { 0.0f, -1.0f,   
+                            1.0f, 0.0f 
+                          };   
 
 float3 generateNewPosition(float2 uv)
 {
-		float4 rand =  tex2D(randomSampler, uv);
-		return float3(rand.x*(screenBorderFromCenterX*2),0,rand.y*(screenBorderFromCenterY*2));
+	float4 rand =  tex2D(randomSampler, uv);
+	return float3(rand.x*(screenBorderFromCenterX*2),0,rand.y*(screenBorderFromCenterY*2));
 }
 
 float4 ResetPositionsPS(in float2 uv : TEXCOORD0) : COLOR
@@ -75,18 +80,29 @@ float4 ResetPositionsPS(in float2 uv : TEXCOORD0) : COLOR
 	return float4(generateNewPosition(uv), maxLife);
 }
 
-int coreGravityStrength = 450000;
-float2x2 nintyDegreeRot = { 0.0f, -1.0f,   
-                            1.0f, 0.0f 
-                          };   
+
 float4 ResetRotateVelocitiesPS(in float2 uv : TEXCOORD0) : COLOR
 {
-	float4 pos = tex2D(positionSampler, uv);
-	float2 orthogonalToPos = mul(nintyDegreeRot, float2(pos.x, pos.z));
-	float4 finalVector = float4(orthogonalToPos.x, 0, orthogonalToPos.y,0);
-	float magnitude = distance(0,pos);
-	float4 finalNormalizedVector = (finalVector * (1/magnitude));
-	return finalVector/9;
+	if(spiralIn)  //rotational velocity slightly lower than orbital
+	{
+		float4 pos = tex2D(positionSampler, uv);
+		float2 orthogonalToPos = mul(nintyDegreeRot, float2(pos.x, pos.z));
+		float4 finalVector = float4(orthogonalToPos.x, 0, orthogonalToPos.y,0);
+		return finalVector/9;
+	}
+	else         //rotational velocity = orbital velocity
+	{
+		float4 pos = tex2D(positionSampler, uv);
+		float2 pos2 = pos.xz;
+		float magnitude = distance(0,pos2);
+		float approxVelMag = sqrt(coreGravityStrength/magnitude);
+		
+		float2 orthogonalToPos = mul(nintyDegreeRot, float2(pos.x, pos.z));
+		float4 finalVector = float4(orthogonalToPos.x, 0, orthogonalToPos.y,0);
+		
+		float4 finalNormalizedVector = (finalVector * (1/magnitude));
+		return finalNormalizedVector*approxVelMag;
+	}
 }
 
 float4 ResetVelocitiesPS(in float2 uv : TEXCOORD0) : COLOR
@@ -118,7 +134,7 @@ float4 UpdatePositionsPS(in float2 uv : TEXCOORD0) : COLOR
 		// Update particle position and life
 		float4 velocity = tex2D(velocitySampler, uv);
         pos.xyz += elapsedTime * velocity;
-        pos.w += elapsedTime;
+        //pos.w += elapsedTime;
 	}
 	return pos;
 }
@@ -144,18 +160,16 @@ float4 UpdateVelocitiesPS(in float2 uv : TEXCOORD0) : COLOR
                 }
                 if(isCoreGravityOn)
                 {
-					float4 gravityDirection = (0-pos);
+					float4 gravityDirection = -pos;
 					float4 dist = distance(0,gravityDirection);
 					velocity += (gravityDirection/dist) * (coreGravityStrength/pow(dist,2)) * elapsedTime;
                 }
                 
-                 
-                 //pull by mouse location (pullStrength is 0 if mouse not pressed)
+                //pull by mouse location (pullStrength is 0 if mouse not pressed)
 				float4 pullDirection = (pullLocation - pos);
 				float distance = distance(0, pullDirection);
-				//assuming unit mass, v1 = v0 + a*t where a=F
-				velocity += pullDirection * (pullStrength/pow(distance,1.1)) * elapsedTime; 
-				 
+				//assuming unit mass, v1 = v0 + a*t where a= pull force
+				velocity += pullDirection * (pullStrength/pow(distance,1.1)) * elapsedTime;  
          }
          
          if(pos.z < -screenBorderFromCenterY)

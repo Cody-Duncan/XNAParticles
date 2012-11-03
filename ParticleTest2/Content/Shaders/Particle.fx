@@ -1,6 +1,4 @@
-float4x4 view;
-float4x4 proj;
-float4x4 world;
+float4x4 WorldViewProj;
 
 float sizeModifier : PARTICLE_SIZE = 3.5f;
 texture textureMap : DiffuseMap;  // texture for scene rendering
@@ -57,8 +55,6 @@ float screenHeight = 600;
 VS_OUTPUT Transform(VS_INPUT In)
 {
     VS_OUTPUT Out = (VS_OUTPUT)0;
-    float4x4 worldView= mul(world, view);
-    float4x4 WorldViewProj=mul(worldView, proj);
 
     // Transform the position from object space to homogeneous projection space
     float4 realPosition = tex2Dlod ( positionSampler, float4(In.vertexData.x, In.vertexData.y,0,0));
@@ -66,7 +62,7 @@ VS_OUTPUT Transform(VS_INPUT In)
     Out.color = In.color;
     realPosition.w = 1;          //we need to set this to 1, because the value read from the texture is the life of the particle, which doesn't interest us here.
     Out.position = mul( realPosition , WorldViewProj);
-	Out.Size = 3.0;
+	Out.Size = 1.3;
     return Out;
     
 }
@@ -83,6 +79,7 @@ float4 ApplyTexture(PS_INPUT input) : COLOR
     
 	float4 col=tex2D(textureSampler, textureCoordinate) * input.Color;
 
+	//makes a nice purple/blue color
 	col.b *= 3;
 	col.r *= 1.4;
 	
