@@ -41,17 +41,17 @@ To use args:
 
    particleCount: particleCount^2 is the number of particles rendered.
         Default: 512 (262144 total particles) 
-        Args:   string.Join( , particleCountFlags) 
+        Args:   -particles /particles -p /p 
 
    pullStrength : Power of Mouse-click gravity(left)/antigravity(right).
         Default: 100 
         Note: Pull power weakens linearly over greater distance, rather 
               than exponentially, like gravity  
-        Args:   string.Join( , pullStrengthFlags)   
+        Args:   -mousePull /mousePull -m /m 
 
    CoreGravity  : Power of Gravity in Center of space (mode 3).
         Default: 45000  
-        Args:   string.Join( , gravityStrengthFlags));
+        Args:   -gravity /gravity -g /g  
 
 ===== Controls ===== 
 Modes (number corresponds to key to press)
